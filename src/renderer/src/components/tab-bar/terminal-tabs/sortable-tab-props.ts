@@ -46,6 +46,10 @@ export type SortableTabProps = {
   namingFailure?: StructuredChatTabNamingFailure | null
   /** False for a tab that stays open, such as a bot's Home; it also cannot be pinned or renamed. */
   closable?: boolean
+  /** False for a bot's side chats: only its Home holds the left. A pinned one can still be unpinned. */
+  canPin?: boolean
+  /** A bot's Home: marked so it reads as the one chat that stays first. */
+  isBotHome?: boolean
   /** False for a bot's chats, which stay native chats. */
   canContinueInTerminal?: boolean
   /** Shown in place of the agent's icon, as a bot's picture on its chats. */
