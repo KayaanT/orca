@@ -29519,5 +29519,18 @@
       "previous": "Previous month",
       "next": "Next month"
     }
+  },
+  "activityBar": {
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "hide": "Hide",
+    "show": "Show {{name}}",
+    "dragStart": "Picked up {{name}}",
+    "dragOver": "{{name}} over {{target}}",
+    "dragEnd": "Dropped {{name}}",
+    "dragCancel": "Cancelled moving {{name}}",
+    "moveLeft": "Move left",
+    "moveRight": "Move right",
+    "reset": "Reset tab order"
   }
 }
