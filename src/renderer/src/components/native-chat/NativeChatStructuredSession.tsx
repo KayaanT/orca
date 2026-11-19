@@ -36,7 +36,7 @@ import { NativeChatFindBar } from '@/components/native-chat/viewport/find/Native
 import { nativeChatQueueFollowUps } from '../../../../shared/native-chat/input/composer/native-chat-follow-up-behavior'
 import { LinkActionPopover } from '@/components/link-actions/LinkActionPopover'
 import { useNativeChatLinkActions } from '@/components/native-chat/links/actions/use-native-chat-link-actions'
-import { NativeChatLinkClickContext } from '@/components/native-chat/links/actions/native-chat-link-click-context'
+import { NativeChatContexts } from '@/components/native-chat/native-chat-session-contexts'
 import { useNativeChatFileLinkContext } from '@/components/native-chat/links/actions/use-native-chat-file-link-context'
 import { useRecheckNativeChatFileLinksWhenTurnEnds } from '@/components/native-chat/links/actions/use-native-chat-file-link-existence'
 import { useNativeChatTabOwnerWorktreeId } from '@/components/native-chat/pane/ownership/use-native-chat-tab-owner'
@@ -410,5 +410,5 @@ export function NativeChatStructuredSession(props: Omit<NativeChatStructuredView
       <LinkActionPopover request={linkActionRequest} onClose={closeLinkActions} />
     </div>
   )
-  return <NativeChatLinkClickContext value={onLinkClick}>{root}</NativeChatLinkClickContext>
+  return <NativeChatContexts link={onLinkClick} install={install} root={root} />
 }
