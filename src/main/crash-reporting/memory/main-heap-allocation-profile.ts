@@ -26,6 +26,8 @@ const FIRST_READ_BYTES = 2.5 * GB
 const READ_GROWTH_BYTES = 512 * MB
 // kern.memorystatus_vm_pressure_level: 1 normal, 2 warn, 4 critical.
 const MAC_PRESSURE_WARN_LEVEL = 2
+// Pressure can clear while the heap is still swapped out; a read then paged it all back in.
+const MIN_RESIDENT_HEAP_SHARE = 0.5
 const ANNOTATED_SITES = 2
 const ANNOTATION_MAX_LENGTH = 127
 
@@ -40,6 +42,7 @@ type Sampling = {
 
 let sampling: Sampling | undefined
 let checkingPressure = false
+let latestTotalBytes = 0
 
 function post(
   session: Session,
@@ -53,6 +56,7 @@ function post(
 
 /** Fed each committed-heap total (main plus in-process workers) by the worker heap sampler. */
 export function noteMainCageHeap(totalBytes: number, mainBytes: number): void {
+  latestTotalBytes = totalBytes
   if (sampling && totalBytes < STOP_BYTES) {
     stop()
     return
@@ -74,12 +78,16 @@ export function noteMainCageHeap(totalBytes: number, mainBytes: number): void {
       if (pressured || sampling !== current) {
         return
       }
-      if (current) {
+      // A newer sample may have dropped below the line while the check was pending.
+      if (!current) {
+        if (latestTotalBytes >= START_BYTES) {
+          start(latestTotalBytes)
+        }
+      } else if (latestTotalBytes >= current.nextReadBytes && !mainHeapMostlyPagedOut()) {
         read(current, totalBytes, mainBytes)
-      } else {
-        start(totalBytes)
       }
     })
+    .catch(() => undefined)
     .finally(() => {
       checkingPressure = false
     })
@@ -90,7 +98,13 @@ async function machineUnderMemoryPressure(): Promise<boolean> {
     return false
   }
   const level = parseMacHangPressure(await readMacMemorySysctl(), '').systemMemoryPressureLevel
-  return level !== null && level >= MAC_PRESSURE_WARN_LEVEL
+  // An unreadable level usually means sysctl timed out, which happens under the swap this guards.
+  return level === null || level >= MAC_PRESSURE_WARN_LEVEL
+}
+
+function mainHeapMostlyPagedOut(): boolean {
+  const { rss, heapTotal } = process.memoryUsage()
+  return rss < heapTotal * MIN_RESIDENT_HEAP_SHARE
 }
 
 function start(totalBytes: number): void {

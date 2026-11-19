@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const machine = vi.hoisted(() => ({ pressureLevel: 1, samplerStarts: 0, profileReads: 0 }))
+const machine = vi.hoisted(() => ({
+  pressureLevel: 1,
+  residentShare: 1,
+  samplerStarts: 0,
+  profileReads: 0
+}))
 
 vi.mock('node:inspector', () => ({
   Session: class {
@@ -39,16 +44,25 @@ vi.mock('../../worker-threads/worker-thread-entry-path', () => ({
 const GB = 2 ** 30
 const platform = process.platform
 
-// Guards the memory-pressure skip: under swap, a profile read's full GC froze main for 8-43 s.
+// Guards #44950: under swap, a profile read's full GC paged the heap back in and froze main for 8-43 s.
 describe('main heap allocation profile under machine memory pressure', () => {
   beforeEach(() => {
     vi.resetModules()
     Object.defineProperty(process, 'platform', { value: 'darwin' })
     machine.samplerStarts = 0
     machine.profileReads = 0
+    machine.residentShare = 1
+    vi.spyOn(process, 'memoryUsage').mockImplementation(() => ({
+      rss: 3 * GB * machine.residentShare,
+      heapTotal: 3 * GB,
+      heapUsed: 2 * GB,
+      external: 0,
+      arrayBuffers: 0
+    }))
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     Object.defineProperty(process, 'platform', { value: platform })
   })
 
@@ -66,6 +80,16 @@ describe('main heap allocation profile under machine memory pressure', () => {
     await climbToCageLimit()
 
     expect(machine.samplerStarts).toBe(0)
+    expect(machine.profileReads).toBe(0)
+  })
+
+  it('reads nothing once pressure clears while most of the heap is still paged out', async () => {
+    machine.pressureLevel = 1
+    machine.residentShare = 0.1
+
+    await climbToCageLimit()
+
+    expect(machine.samplerStarts).toBe(1)
     expect(machine.profileReads).toBe(0)
   })
 
