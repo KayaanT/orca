@@ -122,10 +122,11 @@ export async function structuredAgentSupportsLaunch(
 /** The environment a new local chat launch starts from, before its account binding. */
 export async function resolveHostStructuredAgentLaunchEnvironment(
   agent: string,
-  settings: LaunchEnvironmentSettings
+  settings: LaunchEnvironmentSettings,
+  cachedOnly = false
 ): Promise<Record<string, string>> {
   return overlayEnvironmentVariables(
-    await resolveHostAgentBaseEnvironment(settings),
+    await resolveHostAgentBaseEnvironment(settings, cachedOnly),
     isTuiAgent(agent) ? resolveTuiAgentLaunchEnv(agent, settings) : undefined,
     process.platform
   )
