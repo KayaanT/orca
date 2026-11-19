@@ -46,6 +46,26 @@ export function parseMacHangPressure(
   }
 }
 
+function completeStdout(result: {
+  stdout: string
+  timedOut: boolean
+  outputTruncated?: boolean
+}): string {
+  return result.timedOut || result.outputTruncated ? '' : result.stdout
+}
+
+/** Swap usage and the kernel's memory-pressure levels; empty when unreadable. */
+export async function readMacMemorySysctl(signal?: AbortSignal): Promise<string> {
+  const { runProcess } = await import('@orca/process-host')
+  return runProcess({
+    program: '/usr/sbin/sysctl',
+    args: ['vm.swapusage', 'kern.memorystatus_level', 'kern.memorystatus_vm_pressure_level'],
+    timeoutMs: 2_000,
+    maxOutputBytes: 32 * 1024,
+    signal
+  }).then(completeStdout, () => '')
+}
+
 export async function collectHangMachineSnapshot(
   signal: AbortSignal
 ): Promise<HangMachineSnapshot> {
@@ -66,27 +86,16 @@ export async function collectHangMachineSnapshot(
   }
   if (process.platform === 'darwin' && !signal.aborted) {
     const { runProcess } = await import('@orca/process-host')
-    const commands = await Promise.allSettled([
-      runProcess({
-        program: '/usr/sbin/sysctl',
-        args: ['vm.swapusage', 'kern.memorystatus_level', 'kern.memorystatus_vm_pressure_level'],
-        timeoutMs: 2_000,
-        maxOutputBytes: 32 * 1024,
-        signal
-      }),
+    const [sysctl, vmStat] = await Promise.all([
+      readMacMemorySysctl(signal),
       runProcess({
         program: '/usr/bin/vm_stat',
         timeoutMs: 2_000,
         maxOutputBytes: 32 * 1024,
         signal
-      })
+      }).then(completeStdout, () => '')
     ])
-    const outputs = commands.map((result) =>
-      result.status === 'fulfilled' && !result.value.timedOut && !result.value.outputTruncated
-        ? result.value.stdout
-        : ''
-    )
-    Object.assign(snapshot, parseMacHangPressure(outputs[0], outputs[1]))
+    Object.assign(snapshot, parseMacHangPressure(sysctl, vmStat))
   }
   snapshot.completedAt = Date.now()
   return snapshot

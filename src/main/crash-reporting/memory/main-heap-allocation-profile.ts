@@ -3,6 +3,10 @@ import { pathToFileURL } from 'node:url'
 import { crashReporter } from 'electron'
 import { recordDurableCrashBreadcrumb } from '../breadcrumbs/durable-crash-breadcrumb'
 import { currentWorkerEntryLayout } from '../../worker-threads/worker-thread-entry-path'
+import {
+  parseMacHangPressure,
+  readMacMemorySysctl
+} from '../../hang-watchdog/hang-incident-snapshot'
 import { readSamplingProfile, summarizeSamplingProfile } from './heap-allocation-sites'
 
 /**
@@ -20,6 +24,8 @@ const STOP_BYTES = 0.75 * GB
 const FIRST_READ_BYTES = 2.5 * GB
 // Each read runs a full GC on main, so later reads wait for real growth.
 const READ_GROWTH_BYTES = 512 * MB
+// kern.memorystatus_vm_pressure_level: 1 normal, 2 warn, 4 critical.
+const MAC_PRESSURE_WARN_LEVEL = 2
 const ANNOTATED_SITES = 2
 const ANNOTATION_MAX_LENGTH = 127
 
@@ -33,6 +39,7 @@ type Sampling = {
 }
 
 let sampling: Sampling | undefined
+let checkingPressure = false
 
 function post(
   session: Session,
@@ -46,20 +53,44 @@ function post(
 
 /** Fed each committed-heap total (main plus in-process workers) by the worker heap sampler. */
 export function noteMainCageHeap(totalBytes: number, mainBytes: number): void {
-  if (!sampling) {
-    if (totalBytes >= START_BYTES) {
-      start(totalBytes)
-    }
-    return
-  }
-  if (totalBytes < STOP_BYTES) {
+  if (sampling && totalBytes < STOP_BYTES) {
     stop()
     return
   }
-  if (!sampling.ready || sampling.reading || totalBytes < sampling.nextReadBytes) {
+  const current = sampling
+  const wantsStart = !current && totalBytes >= START_BYTES
+  const wantsRead =
+    current !== undefined &&
+    current.ready &&
+    !current.reading &&
+    totalBytes >= current.nextReadBytes
+  if ((!wantsStart && !wantsRead) || checkingPressure) {
     return
   }
-  read(sampling, totalBytes, mainBytes)
+  // Under swap, the read's full GC pages the whole heap back in and froze main for 8-43 s.
+  checkingPressure = true
+  void machineUnderMemoryPressure()
+    .then((pressured) => {
+      if (pressured || sampling !== current) {
+        return
+      }
+      if (current) {
+        read(current, totalBytes, mainBytes)
+      } else {
+        start(totalBytes)
+      }
+    })
+    .finally(() => {
+      checkingPressure = false
+    })
+}
+
+async function machineUnderMemoryPressure(): Promise<boolean> {
+  if (process.platform !== 'darwin') {
+    return false
+  }
+  const level = parseMacHangPressure(await readMacMemorySysctl(), '').systemMemoryPressureLevel
+  return level !== null && level >= MAC_PRESSURE_WARN_LEVEL
 }
 
 function start(totalBytes: number): void {
