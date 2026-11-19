@@ -205,7 +205,8 @@ export function NativeChatMessageList({
     thinking
   })
   // Only unshown prompts need a waiting tail row; prompt cards explain their own wait.
-  const tailRow = transcriptTailRow(turnWorking, awaitingInput)
+  // The activity line shows while "Sending…" so a slow first reply never looks stalled.
+  const tailRow = transcriptTailRow(working, awaitingInput)
   const lifecycleWorking = subagentId === null && session.transcriptLifecycle?.state === 'working'
   const { measureContent, typography } = useNativeChatRowTypography(contentRef)
   const forkOffer = useNativeChatSideChatForkOffer(latestTurnKey)

@@ -104,13 +104,16 @@ export function useMobileNativeChatTurnDisclosure({
       unresolvedRowIds: membership.unresolvedRowIds
     }
   }, [enabled, messages, turnJournal])
+  const openingSendPending = structuredAgentTurnOpeningSendPending(
+    liveTurnKey,
+    turnJournal?.submissions
+  )
   const turnStatuses = useMobileNativeChatTurnStatus({
     turnKeys,
     liveTurnKey,
     enabled,
     // The clock starts once the host has the opening message, as desktop's "Sending…" clears.
-    isWorking:
-      isWorking && !structuredAgentTurnOpeningSendPending(liveTurnKey, turnJournal?.submissions),
+    isWorking: isWorking && !openingSendPending,
     workingStartedAt,
     settledTurns,
     thinking,
@@ -178,14 +181,25 @@ export function useMobileNativeChatTurnDisclosure({
   const line = useMemo(
     () =>
       nativeChatLiveLine({
-        draws: isWorking && !lineYields && (!enabled || active !== null),
+        // Draw while the opening send is pending too, so a slow first reply never looks stalled.
+        draws: isWorking && !lineYields && (!enabled || active !== null || openingSendPending),
         thinking: active?.thinking === true,
         stopping,
         activityText: activeActivityText,
         messages: rows,
         inLiveWorkingTurn
       }),
-    [active, activeActivityText, enabled, inLiveWorkingTurn, isWorking, lineYields, rows, stopping]
+    [
+      active,
+      activeActivityText,
+      enabled,
+      inLiveWorkingTurn,
+      isWorking,
+      lineYields,
+      openingSendPending,
+      rows,
+      stopping
+    ]
   )
   const liveReasoningId = line?.reasoning?.message.id
   const liveLine = useMemo<MobileNativeChatLiveLine | null>(
