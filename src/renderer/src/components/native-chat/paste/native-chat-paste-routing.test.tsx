@@ -8,6 +8,8 @@ import type * as I18nModule from '@/i18n/i18n'
 import { useNativeChatPasteBridge } from './use-native-chat-paste-bridge'
 import type { NativeChatComposerHandle } from '../composer/native-chat-composer-types'
 import { NativeChatPaneCover } from '../../terminal-pane/chat/NativeChatPaneCover'
+import { registerNativeChatComposerDestination } from '../composer/focus/native-chat-composer-destination'
+import { dispatchAppMenuPasteEvent } from '@/lib/clipboard/menu/app-menu-paste'
 
 import { registerTerminalPanePasteListeners } from '../../terminal-pane/input/paste/terminal-pane-paste-listeners'
 import type { TerminalPaneCloseController } from '../../terminal-pane/layout/close/use-terminal-pane-close-actions'
@@ -217,6 +219,30 @@ describe('paste inside a chat cover never reaches the terminal', () => {
     })
     expect(answer.value).toBe('answer')
     expect(mocks.error).not.toHaveBeenCalled()
+  })
+})
+
+describe('paste while a question card replaces the composer', () => {
+  it('fills the focused answer, not the hidden composer', async () => {
+    const f = fixture()
+    const answer = document.createElement('input')
+    f.cover(<ChatRoot answer={answer} />)
+    const hidden = document.createElement('div')
+    hidden.hidden = true
+    answer.parentElement!.append(hidden)
+    const pasteFromClipboard = vi.fn()
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: routing reads only these handle fields.
+    const handle = {
+      current: { pasteFromClipboard, contains: () => false } as unknown as NativeChatComposerHandle
+    }
+    const unregister = registerNativeChatComposerDestination(hidden, handle, true)
+    answer.focus()
+    await act(async () => {
+      expect(dispatchAppMenuPasteEvent()).toBe(true)
+    })
+    unregister()
+    expect(answer.value).toBe('menu text')
+    expect(pasteFromClipboard).not.toHaveBeenCalled()
   })
 })
 
