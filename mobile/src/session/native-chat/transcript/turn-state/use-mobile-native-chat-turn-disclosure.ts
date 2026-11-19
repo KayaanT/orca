@@ -104,10 +104,8 @@ export function useMobileNativeChatTurnDisclosure({
       unresolvedRowIds: membership.unresolvedRowIds
     }
   }, [enabled, messages, turnJournal])
-  const openingSendPending = structuredAgentTurnOpeningSendPending(
-    liveTurnKey,
-    turnJournal?.submissions
-  )
+  const openingSendPending =
+    isWorking && structuredAgentTurnOpeningSendPending(liveTurnKey, turnJournal?.submissions)
   const turnStatuses = useMobileNativeChatTurnStatus({
     turnKeys,
     liveTurnKey,
@@ -178,28 +176,19 @@ export function useMobileNativeChatTurnDisclosure({
     [enabled, isWorking, liveTurnKey, turnKeys, unresolvedRowIds, rows]
   )
   const activeActivityText = enabled && isWorking ? (activityText ?? null) : null
+  // Draw while the opening send is pending too, so a slow first reply never looks stalled.
+  const draws = isWorking && !lineYields && (!enabled || active !== null || openingSendPending)
   const line = useMemo(
     () =>
       nativeChatLiveLine({
-        // Draw while the opening send is pending too, so a slow first reply never looks stalled.
-        draws: isWorking && !lineYields && (!enabled || active !== null || openingSendPending),
+        draws,
         thinking: active?.thinking === true,
         stopping,
         activityText: activeActivityText,
         messages: rows,
         inLiveWorkingTurn
       }),
-    [
-      active,
-      activeActivityText,
-      enabled,
-      inLiveWorkingTurn,
-      isWorking,
-      lineYields,
-      openingSendPending,
-      rows,
-      stopping
-    ]
+    [active, activeActivityText, draws, inLiveWorkingTurn, rows, stopping]
   )
   const liveReasoningId = line?.reasoning?.message.id
   const liveLine = useMemo<MobileNativeChatLiveLine | null>(
