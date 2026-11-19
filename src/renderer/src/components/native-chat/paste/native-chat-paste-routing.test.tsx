@@ -231,11 +231,10 @@ describe('paste while a question card replaces the composer', () => {
     hidden.hidden = true
     answer.parentElement!.append(hidden)
     const pasteFromClipboard = vi.fn()
+    const fields = { pasteFromClipboard, contains: () => false }
     // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: routing reads only these handle fields.
-    const handle = {
-      current: { pasteFromClipboard, contains: () => false } as unknown as NativeChatComposerHandle
-    }
-    const unregister = registerNativeChatComposerDestination(hidden, handle, true)
+    const composer = fields as unknown as NativeChatComposerHandle
+    const unregister = registerNativeChatComposerDestination(hidden, { current: composer }, true)
     answer.focus()
     await act(async () => {
       expect(dispatchAppMenuPasteEvent()).toBe(true)
