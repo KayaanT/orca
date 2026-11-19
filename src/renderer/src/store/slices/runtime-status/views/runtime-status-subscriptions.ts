@@ -3,17 +3,17 @@ import { runtimeHostConnectionStateForEntry } from '@/runtime/hosts/connections/
 import type { RuntimeHostConnectionState } from '../../../../../../shared/remote-runtime/host-status/runtime-host-connection-state'
 import { createPairedRuntimeParkingEnvironmentIdsSelector } from '@/components/terminal-pane/parking/retention/paired-runtime-parking-capabilities'
 
+export type RuntimeStatuses = ReadonlyMap<string, RuntimeEnvironmentStatus>
 type RuntimeStatusState = {
-  runtimeStatusByEnvironmentId: ReadonlyMap<string, RuntimeEnvironmentStatus>
+  runtimeStatusByEnvironmentId: RuntimeStatuses
 }
-type RuntimeStatusStore = {
+export type RuntimeStatusStore = {
   getState: () => RuntimeStatusState
   subscribe: (
     listener: (state: RuntimeStatusState, previous: RuntimeStatusState) => void
   ) => () => void
 }
 type Listener = () => void
-type RuntimeStatuses = RuntimeStatusState['runtimeStatusByEnvironmentId']
 export type RuntimeStatusChange = {
   ids: ReadonlySet<string>
   added: readonly string[]
@@ -36,16 +36,18 @@ export function createRuntimeStatusSubscriptions(store: RuntimeStatusStore) {
   let previousStatuses: RuntimeStatuses | undefined
   let unsubscribeStore: (() => void) | null = null
 
+  function readStatuses(): RuntimeStatuses {
+    return store.getState().runtimeStatusByEnvironmentId
+  }
+
   function getConnectionSnapshot(environmentId: string | null): RuntimeHostConnectionState {
     return runtimeHostConnectionStateForEntry(
-      environmentId === null
-        ? undefined
-        : store.getState().runtimeStatusByEnvironmentId.get(environmentId)
+      environmentId === null ? undefined : readStatuses().get(environmentId)
     )
   }
 
   function getParkingSnapshot(): ReadonlySet<string> {
-    return selectParking(store.getState().runtimeStatusByEnvironmentId)
+    return selectParking(readStatuses())
   }
 
   function ensureSubscription(): void {
@@ -56,7 +58,7 @@ export function createRuntimeStatusSubscriptions(store: RuntimeStatusStore) {
     const initial: RuntimeStatusState | undefined = store.getState()
     previousStatuses = initial?.runtimeStatusByEnvironmentId
     unsubscribeStore = store.subscribe((_state, prior) => {
-      const statuses = store.getState().runtimeStatusByEnvironmentId
+      const statuses = readStatuses()
       // Subscribed during creation: the first write's prior state is the real baseline.
       const previous = previousStatuses ?? prior?.runtimeStatusByEnvironmentId
       if (statuses === previous) {
@@ -218,6 +220,11 @@ export function createRuntimeStatusSubscriptions(store: RuntimeStatusStore) {
     }
   }
 
+  /** One wake per store publication, host status included; never twice for one publication. */
+  function subscribeStore(listener: Listener): () => void {
+    return store.subscribe(listener)
+  }
+
   /** Names the hosts each status write touched, after every keyed view's baseline is set. */
   function subscribeStatusChanges(listener: ChangeListener): () => void {
     ensureSubscription()
@@ -230,15 +237,19 @@ export function createRuntimeStatusSubscriptions(store: RuntimeStatusStore) {
   }
 
   return {
+    readStatuses,
     getConnectionSnapshot,
     subscribeConnection,
     getParkingSnapshot,
     subscribeParking,
     subscribeEntry,
     subscribeStatuses,
-    subscribeStatusChanges
+    subscribeStatusChanges,
+    subscribeStore
   }
 }
+
+export type RuntimeStatusSubscriptions = ReturnType<typeof createRuntimeStatusSubscriptions>
 
 function diffStatuses(
   previous: RuntimeStatuses | undefined,
@@ -286,4 +297,24 @@ export function runtimeStatusSubscriptionsFor(
     subscriptionsByStore.set(key, subscriptions)
   }
   return subscriptions
+}
+
+/** One callback per store publication with the host statuses on each side of it. */
+export function subscribeStoreWithStatuses<S extends RuntimeStatusState>(
+  store: { subscribe: (listener: (state: S, previous: S) => void) => () => void },
+  listener: (
+    state: S,
+    previous: S,
+    statuses: RuntimeStatuses,
+    previousStatuses: RuntimeStatuses
+  ) => void
+): () => void {
+  return store.subscribe((state, previous) =>
+    listener(
+      state,
+      previous,
+      state.runtimeStatusByEnvironmentId,
+      previous.runtimeStatusByEnvironmentId
+    )
+  )
 }
