@@ -8,7 +8,7 @@ import { JOURNAL_STORED_OUTPUT_WRITES } from './journal-stored-output'
 
 const MINUTE = 60_000
 const COMPACTION_INTERVAL = 6 * 60 * MINUTE
-// About 8k saved outputs a minute at the shared 10% duty cycle; none while writes are off.
+// About 8k saved outputs a minute at the shared 10% duty cycle; none if writes are switched off.
 const STORED_OUTPUT_PAGES_PER_TICK = JOURNAL_STORED_OUTPUT_WRITES ? 256 : 0
 
 /** Idle conversion and periodic pruning share one owner; activity never blocks retired cleanup. */
