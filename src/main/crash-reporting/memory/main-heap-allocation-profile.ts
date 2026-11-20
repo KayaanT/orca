@@ -43,6 +43,7 @@ type Sampling = {
 let sampling: Sampling | undefined
 let checkingPressure = false
 let latestTotalBytes = 0
+let latestMainBytes = 0
 
 function post(
   session: Session,
@@ -57,6 +58,7 @@ function post(
 /** Fed each committed-heap total (main plus in-process workers) by the worker heap sampler. */
 export function noteMainCageHeap(totalBytes: number, mainBytes: number): void {
   latestTotalBytes = totalBytes
+  latestMainBytes = mainBytes
   if (sampling && totalBytes < STOP_BYTES) {
     stop()
     return
@@ -83,8 +85,8 @@ export function noteMainCageHeap(totalBytes: number, mainBytes: number): void {
         if (latestTotalBytes >= START_BYTES) {
           start(latestTotalBytes)
         }
-      } else if (latestTotalBytes >= current.nextReadBytes && !mainHeapMostlyPagedOut()) {
-        read(current, totalBytes, mainBytes)
+      } else if (latestTotalBytes >= current.nextReadBytes && !cageMostlyPagedOut()) {
+        read(current, latestTotalBytes, latestMainBytes)
       }
     })
     .catch(() => undefined)
@@ -102,9 +104,9 @@ async function machineUnderMemoryPressure(): Promise<boolean> {
   return level === null || level >= MAC_PRESSURE_WARN_LEVEL
 }
 
-function mainHeapMostlyPagedOut(): boolean {
-  const { rss, heapTotal } = process.memoryUsage()
-  return rss < heapTotal * MIN_RESIDENT_HEAP_SHARE
+// Against the whole cage, since rss also counts the in-process workers' heaps.
+function cageMostlyPagedOut(): boolean {
+  return process.memoryUsage().rss < latestTotalBytes * MIN_RESIDENT_HEAP_SHARE
 }
 
 function start(totalBytes: number): void {
