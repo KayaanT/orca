@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentJournalItemBody } from '../../../../../../src/shared/agent-session/journal/agent-session-journal-types'
 import type { NativeChatMessage } from '../../../../../../src/shared/native-chat/native-chat-types'
 import type { NativeChatTurnJournal } from '../../../../../../src/shared/native-chat/transcript/turns/native-chat-turn-membership'
+import { agentJournalSubmissionKey } from '../../../../../../src/shared/agent-session/journal/agent-session-journal-item-key'
 
-import { Harness, Result } from './use-mobile-native-chat-turn-disclosure.test-fixture'
+import { Harness, Result, userMessage } from './use-mobile-native-chat-turn-disclosure.test-fixture'
 
 describe('useMobileNativeChatTurnDisclosure with a turn journal', () => {
   let renderer: ReactTestRenderer | null = null
@@ -118,4 +119,37 @@ describe('useMobileNativeChatTurnDisclosure with a turn journal', () => {
       }
     }
   )
+
+  // The provider can take many seconds to start answering; the chat must not look stalled meanwhile.
+  it('draws the working line, without a clock, while the opening send is pending', () => {
+    const sent = agentJournalSubmissionKey('c1')
+    const turnJournal: NativeChatTurnJournal = {
+      ...journalOf([[sent, said('user'), null]], true),
+      submissions: [
+        {
+          clientMessageId: 'c1',
+          fence: 1,
+          payloadFingerprint: 'f',
+          dispatchState: 'pending',
+          providerItemId: null,
+          reason: null,
+          submittedAt: 1,
+          resolvedAt: null
+        }
+      ]
+    }
+    act(() => {
+      renderer = create(
+        createElement(Harness, {
+          messages: [userMessage(sent)],
+          enabled: true,
+          workingStartedAt: null,
+          turnJournal
+        })
+      )
+    })
+    const disclosure = renderer!.root.findByType(Result).props.disclosure
+    expect(disclosure.active).toBeNull()
+    expect(disclosure.liveLine).not.toBeNull()
+  })
 })
