@@ -9,8 +9,9 @@ type RuntimeStatusState = {
 }
 export type RuntimeStatusStore = {
   getState: () => RuntimeStatusState
+  // Optional arguments so stores whose listeners take none (test doubles, adapters) also fit.
   subscribe: (
-    listener: (state: RuntimeStatusState, previous: RuntimeStatusState) => void
+    listener: (state?: RuntimeStatusState, previous?: RuntimeStatusState) => void
   ) => () => void
 }
 type Listener = () => void
