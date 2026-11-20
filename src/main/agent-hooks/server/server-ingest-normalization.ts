@@ -204,7 +204,7 @@ export abstract class AgentHookServerIngestNormalization extends AgentHookServer
     aliasedBody: unknown
   ): NormalizedLocalHook['event'] {
     const normalized = this.normalizeLocalHookPayload(source, aliasedBody)
-    if (source === 'muse' && !normalized.event) {
+    if ((source === 'muse' || source === 'antigravity') && !normalized.event) {
       this.rearmIgnoredMuseHook(aliasedBody)
     }
     const statusDisposition = normalized.event
