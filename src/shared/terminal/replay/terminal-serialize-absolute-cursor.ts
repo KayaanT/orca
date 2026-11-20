@@ -17,28 +17,49 @@ type BufferSerializer<TOpts> = {
 }
 
 type ReprintCell = { getChars: () => string; getWidth: () => number }
-type ReprintBuffer = {
-  baseY: number
-  cursorY: number
-  getLine: (y: number) => { getCell: (x: number) => ReprintCell | undefined } | undefined
-}
 type ReprintTerminal = SerializeCursorTerminal & {
   modes?: { insertMode?: boolean }
-  buffer: { active: ReprintBuffer; normal: { length: number } }
+  buffer: {
+    active: {
+      baseY: number
+      cursorY: number
+      getLine: (y: number) => { getCell: (x: number) => ReprintCell | undefined } | undefined
+    }
+    normal: { length: number }
+  }
 }
-type RowSerializer = {
+type PenStateSerializer = {
   serialize: (opts: {
     range: { start: number; end: number }
     excludeAltBuffer: true
     excludeModes: true
   }) => string
+}
+type RowSerializer = PenStateSerializer & {
   // Vendored addon internal: serializes rows of any buffer (the public range API reads only normal).
-  _serializeBufferByRange?: (
+  _serializeBufferByRange: (
     terminal: unknown,
     buffer: unknown,
     range: { start: number; end: number },
     excludeFinalCursorPosition: boolean
   ) => string
+}
+
+function isRowSerializer(serializer: object): serializer is RowSerializer {
+  return (
+    typeof Reflect.get(serializer, 'serialize') === 'function' &&
+    typeof Reflect.get(serializer, '_serializeBufferByRange') === 'function'
+  )
+}
+
+function isReprintTerminal(terminal: SerializeCursorTerminal): terminal is ReprintTerminal {
+  const buffer: object = terminal.buffer
+  const active: object = terminal.buffer.active
+  return (
+    typeof Reflect.get(active, 'getLine') === 'function' &&
+    typeof Reflect.get(active, 'baseY') === 'number' &&
+    typeof Reflect.get(Reflect.get(buffer, 'normal') ?? {}, 'length') === 'number'
+  )
 }
 
 /** VT100 DECSC saved-cursor register (0-based, viewport-relative row). */
@@ -102,10 +123,13 @@ export function serializeWithAbsoluteCursor<TOpts>(
 }
 
 /** Live pen SGR and OSC 8 link, without cells. */
-export function serializeCurrentPenState(serializer: unknown, terminal: unknown): string {
+export function serializeCurrentPenState(
+  serializer: PenStateSerializer,
+  terminal: { buffer: { normal: { length: number } } }
+): string {
   // Our vendored addon’s undocumented out-of-range row behavior emits only the live pen state.
-  const emptyRow = (terminal as ReprintTerminal).buffer.normal.length
-  return (serializer as RowSerializer).serialize({
+  const emptyRow = terminal.buffer.normal.length
+  return serializer.serialize({
     range: { start: emptyRow, end: emptyRow },
     excludeAltBuffer: true,
     excludeModes: true
@@ -114,25 +138,28 @@ export function serializeCurrentPenState(serializer: unknown, terminal: unknown)
 
 // A cursor move cannot set pending wrap; reprinting the row so it ends on the edge cell can (STA-16354).
 function buildPendingWrapRestore(
-  serializer: unknown,
+  serializer: object,
   terminal: SerializeCursorTerminal,
   cupCursorY: number
 ): string | null {
-  const source = terminal as ReprintTerminal
-  const serializeRows = (serializer as RowSerializer)._serializeBufferByRange
-  if (typeof serializeRows !== 'function') {
+  if (!isRowSerializer(serializer) || !isReprintTerminal(terminal)) {
     return null
   }
-  const buffer = source.buffer.active
+  const buffer = terminal.buffer.active
   const row = buffer.baseY + buffer.cursorY
   const edge = buffer.getLine(row)?.getCell(terminal.cols - 1)
   // A blank edge serializes to nothing, so the reprint would stop short of the wrap.
   if (!edge || (edge.getChars() === '' && edge.getWidth() !== 0)) {
     return null
   }
-  const rowAnsi = serializeRows.call(serializer, terminal, buffer, { start: row, end: row }, true)
+  const rowAnsi = serializer._serializeBufferByRange(
+    terminal,
+    buffer,
+    { start: row, end: row },
+    true
+  )
   // Insert mode would shift the old cells into the reprint's skipped blanks.
-  const insertMode = source.modes?.insertMode === true
+  const insertMode = terminal.modes?.insertMode === true
   return `${insertMode ? '\x1b[4l' : ''}\x1b[${cupCursorY + 1};1H\x1b[0m${rowAnsi}${insertMode ? '\x1b[4h' : ''}\x1b[0m${serializeCurrentPenState(serializer, terminal)}`
 }
 
@@ -149,7 +176,7 @@ function serializesModes(opts: unknown): boolean {
 export function buildAbsoluteCursorRestoreSequence(
   terminal: SerializeCursorTerminal,
   savedCursor?: SavedCursorRegister | null,
-  options: { restoreModesWithoutCursor?: boolean; serializer?: unknown } = {}
+  options: { restoreModesWithoutCursor?: boolean; serializer?: object } = {}
 ): string {
   const { cursorX, cursorY } = terminal.buffer.active
   const terminalWithCore = terminal as TerminalWithSavedCursorCore
